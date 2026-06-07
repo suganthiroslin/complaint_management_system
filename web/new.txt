@@ -1,0 +1,198 @@
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import java.io.*;
+import java.nio.file.*;
+import java.sql.*;
+import java.net.URLDecoder;
+import java.util.*;
+
+public class MainHandler implements HttpHandler {
+
+    public void handle(HttpExchange ex) throws IOException {
+
+        String path = ex.getRequestURI().getPath();
+
+        try {
+
+            // ================= PAGES =================
+            if (path.equals("/") || path.equals("/login")) {
+                sendFile(ex, "web/login.html");
+                return;
+            }
+
+            if (path.equals("/register")) {
+                sendFile(ex, "web/register.html");
+                return;
+            }
+
+            if (path.equals("/dashboard")) {
+                sendFile(ex, "web/dashboard.html");
+                return;
+            }
+
+            if (path.equals("/admin")) {
+                sendFile(ex, "web/admin.html");
+                return;
+            }
+
+            // ================= CSS =================
+            if (path.equals("/style.css")) {
+                sendFile(ex, "web/style.css");
+                return;
+            }
+
+            // ================= REGISTER =================
+            if (path.equals("/doRegister")) {
+
+                Map<String, String> f = parse(ex);
+
+                Connection con = DBConnection.getConnection();
+                if (con == null) {
+                    sendText(ex, "DB Connection Failed");
+                    return;
+                }
+
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO CMS_USERS(name,email,password,role) VALUES(?,?,?,?)"
+                );
+
+                ps.setString(1, f.get("name"));
+                ps.setString(2, f.get("email"));
+                ps.setString(3, f.get("password"));
+                ps.setString(4, "USER");
+
+                ps.executeUpdate();
+
+                redirect(ex, "/login");
+                return;
+            }
+
+            // ================= LOGIN =================
+            if (path.equals("/doLogin")) {
+
+                Map<String, String> f = parse(ex);
+
+                Connection con = DBConnection.getConnection();
+                if (con == null) {
+                    sendText(ex, "DB Connection Failed");
+                    return;
+                }
+
+                PreparedStatement ps = con.prepareStatement(
+                        "SELECT * FROM CMS_USERS WHERE email=? AND password=?"
+                );
+
+                ps.setString(1, f.get("email"));
+                ps.setString(2, f.get("password"));
+
+                ResultSet rs = ps.executeQuery();
+
+                if (rs.next()) {
+
+                    String role = rs.getString("role");
+
+                    if ("ADMIN".equalsIgnoreCase(role)) {
+                        redirect(ex, "/admin");
+                    } else {
+                        redirect(ex, "/dashboard");
+                    }
+
+                } else {
+                    redirect(ex, "/login");
+                }
+
+                return;
+            }
+
+            // ================= SUBMIT COMPLAINT =================
+            if (path.equals("/submitComplaint")) {
+
+                Map<String, String> f = parse(ex);
+
+                Connection con = DBConnection.getConnection();
+                if (con == null) {
+                    sendText(ex, "DB Connection Failed");
+                    return;
+                }
+
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO CMS_COMPLAINTS(user_email,subject,description,status) VALUES(?,?,?,?)"
+                );
+
+                ps.setString(1, f.get("email"));
+                ps.setString(2, f.get("subject"));
+                ps.setString(3, f.get("description"));
+                ps.setString(4, "Pending");
+
+                ps.executeUpdate();
+
+                redirect(ex, "/dashboard");
+                return;
+            }
+
+            sendText(ex, "404 NOT FOUND");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendText(ex, "ERROR: " + e.getMessage());
+        }
+    }
+
+    // ================= SEND FILE =================
+    void sendFile(HttpExchange ex, String file) throws IOException {
+
+        File f = new File(file);
+
+        if (!f.exists()) {
+            sendText(ex, "File Not Found: " + file);
+            return;
+        }
+
+        byte[] data = Files.readAllBytes(f.toPath());
+
+        ex.sendResponseHeaders(200, data.length);
+
+        OutputStream os = ex.getResponseBody();
+        os.write(data);
+        os.close();
+    }
+
+    // ================= REDIRECT =================
+    void redirect(HttpExchange ex, String loc) throws IOException {
+        ex.getResponseHeaders().add("Location", loc);
+        ex.sendResponseHeaders(302, -1);
+    }
+
+    // ================= TEXT =================
+    void sendText(HttpExchange ex, String msg) throws IOException {
+        byte[] data = msg.getBytes();
+        ex.sendResponseHeaders(200, data.length);
+        ex.getResponseBody().write(data);
+        ex.getResponseBody().close();
+    }
+
+    // ================= PARSER =================
+    Map<String, String> parse(HttpExchange ex) throws IOException {
+
+        Scanner sc = new Scanner(ex.getRequestBody()).useDelimiter("\\A");
+        String data = sc.hasNext() ? sc.next() : "";
+
+        Map<String, String> map = new HashMap<>();
+
+        for (String p : data.split("&")) {
+
+            String[] kv = p.split("=");
+
+            if (kv.length > 1) {
+
+                String key = URLDecoder.decode(kv[0], "UTF-8");
+                String value = URLDecoder.decode(kv[1], "UTF-8");
+
+                map.put(key, value);
+            }
+        }
+
+        return map;
+    }
+}

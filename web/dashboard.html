@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="navbar">User Dashboard</div>
+
+<div class="container">
+
+<div class="card">
+
+<h2>Submit Complaint</h2>
+
+<form method="post" action="/submitComplaint">
+
+<label>Email</label>
+<input name="email">
+
+<label>Subject</label>
+<input name="subject">
+
+<label>Description</label>
+<textarea name="description"></textarea>
+
+<button>Submit Complaint</button>
+
+</form>
+
+</div>
+
+<div class="card">
+
+<h2>Your Complaints</h2>
+
+<div id="complaints">
+Loading complaints...
+</div>
+
+</div>
+
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const email = params.get("email");
+
+if(email){
+    fetch("/getComplaints?email=" + encodeURIComponent(email))
+    .then(r => r.text())
+    .then(data => {
+        document.getElementById("complaints").innerHTML = data;
+    });
+}
+</script>
+
+</body>
+</html>

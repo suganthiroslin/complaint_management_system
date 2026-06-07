@@ -1,0 +1,275 @@
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+
+import java.io.*;
+import java.nio.file.*;
+import java.sql.*;
+import java.net.URLDecoder;
+import java.util.*;
+
+public class MainHandler implements HttpHandler {
+
+    public void handle(HttpExchange ex) throws IOException {
+
+        String path = ex.getRequestURI().getPath();
+
+        try {
+
+            // ================= PAGES =================
+            if (path.equals("/") || path.equals("/login")) {
+                sendFile(ex, "web/login.html");
+                return;
+            }
+
+            if (path.equals("/register")) {
+                sendFile(ex, "web/register.html");
+                return;
+            }
+
+            if (path.equals("/dashboard")) {
+                sendFile(ex, "web/dashboard.html");
+                return;
+            }
+
+            if (path.equals("/admin")) {
+                sendFile(ex, "web/admin.html");
+                return;
+            }
+
+            // ================= CSS =================
+            if (path.equals("/style.css")) {
+                sendFile(ex, "web/style.css");
+                return;
+            }
+
+            // ================= REGISTER =================
+            if (path.equals("/doRegister")) {
+
+                Map<String, String> f = parse(ex);
+
+                Connection con = DBConnection.getConnection();
+                if (con == null) {
+                    sendText(ex, "DB Connection Failed");
+                    return;
+                }
+
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO CMS_USERS(name,email,password,role) VALUES(?,?,?,?)"
+                );
+
+                ps.setString(1, f.get("name"));
+                ps.setString(2, f.get("email"));
+                ps.setString(3, f.get("password"));
+                ps.setString(4, "USER");
+
+                ps.executeUpdate();
+
+                redirect(ex, "/login");
+                return;
+            }
+// ================= LOGIN =================
+if (path.equals("/doLogin")) {
+
+    Map<String, String> f = parse(ex);
+
+    // Hardcoded Admin Login
+    if ("admin@gmail.com".equalsIgnoreCase(f.get("email"))
+            && "admin123".equals(f.get("password"))) {
+
+        redirect(ex, "/admin");
+        return;
+    }
+
+    Connection con = DBConnection.getConnection();
+    if (con == null) {
+        sendText(ex, "DB Connection Failed");
+        return;
+    }
+
+    PreparedStatement ps = con.prepareStatement(
+            "SELECT * FROM CMS_USERS WHERE email=? AND password=?"
+    );
+
+    ps.setString(1, f.get("email"));
+    ps.setString(2, f.get("password"));
+
+    ResultSet rs = ps.executeQuery();
+
+    if (rs.next()) {
+        redirect(ex, "/dashboard?email=" + f.get("email"));
+    } else {
+        redirect(ex, "/login");
+    }
+
+    return;
+}
+
+            // ================= SUBMIT COMPLAINT =================
+if (path.equals("/submitComplaint")) {
+
+    Map<String, String> f = parse(ex);
+
+    Connection con = DBConnection.getConnection();
+    if (con == null) {
+        sendText(ex, "DB Connection Failed");
+        return;
+    }
+
+    PreparedStatement ps = con.prepareStatement(
+            "INSERT INTO CMS_COMPLAINTS(user_email,subject,description,status) VALUES(?,?,?,?)"
+    );
+
+    ps.setString(1, f.get("email"));
+    ps.setString(2, f.get("subject"));
+    ps.setString(3, f.get("description"));
+    ps.setString(4, "Pending");
+
+    ps.executeUpdate();
+
+    redirect(ex, "/dashboard?email=" + f.get("email"));
+    return;
+}
+    // ================= SEND FILE =================
+    void sendFile(HttpExchange ex, String file) throws IOException {
+
+        File f = new File(file);
+
+        if (!f.exists()) {
+            sendText(ex, "File Not Found: " + file);
+            return;
+        }
+
+        byte[] data = Files.readAllBytes(f.toPath());
+
+        ex.sendResponseHeaders(200, data.length);
+
+        OutputStream os = ex.getResponseBody();
+        os.write(data);
+        os.close();
+    }
+// ================= USER COMPLAINTS =================
+if (path.equals("/getComplaints")) {
+
+    String query = ex.getRequestURI().getQuery();
+    String email = "";
+
+    if (query != null && query.startsWith("email=")) {
+        email = URLDecoder.decode(query.substring(6), "UTF-8");
+    }
+
+    Connection con = DBConnection.getConnection();
+
+    PreparedStatement ps = con.prepareStatement(
+            "SELECT * FROM CMS_COMPLAINTS WHERE USER_EMAIL=? ORDER BY ID DESC"
+    );
+
+    ps.setString(1, email);
+
+    ResultSet rs = ps.executeQuery();
+
+    StringBuilder sb = new StringBuilder();
+
+    while (rs.next()) {
+
+        sb.append("<div style='border:1px solid #ccc;padding:10px;margin:10px;'>")
+          .append("<b>ID:</b> ").append(rs.getInt("ID"))
+          .append("<br>")
+          .append("<b>Subject:</b> ").append(rs.getString("SUBJECT"))
+          .append("<br>")
+          .append("<b>Description:</b> ").append(rs.getString("DESCRIPTION"))
+          .append("<br>")
+          .append("<b>Status:</b> ").append(rs.getString("STATUS"))
+          .append("</div>");
+    }
+
+    sendText(ex, sb.toString());
+    return;
+}
+// ================= ADMIN VIEW ALL COMPLAINTS =================
+if (path.equals("/getAllComplaints")) {
+
+    Connection con = DBConnection.getConnection();
+
+    PreparedStatement ps = con.prepareStatement(
+            "SELECT * FROM CMS_COMPLAINTS ORDER BY ID DESC"
+    );
+
+    ResultSet rs = ps.executeQuery();
+
+    StringBuilder sb = new StringBuilder();
+
+    while (rs.next()) {
+
+        sb.append("<div style='border:1px solid black;padding:10px;margin:10px;'>")
+          .append("<b>ID:</b> ").append(rs.getInt("ID"))
+          .append("<br>")
+          .append("<b>Email:</b> ").append(rs.getString("USER_EMAIL"))
+          .append("<br>")
+          .append("<b>Subject:</b> ").append(rs.getString("SUBJECT"))
+          .append("<br>")
+          .append("<b>Description:</b> ").append(rs.getString("DESCRIPTION"))
+          .append("<br>")
+          .append("<b>Status:</b> ").append(rs.getString("STATUS"))
+          .append("</div>");
+    }
+
+    sendText(ex, sb.toString());
+    return;
+}
+// ================= UPDATE STATUS =================
+if (path.equals("/updateStatus")) {
+
+    Map<String, String> f = parse(ex);
+
+    Connection con = DBConnection.getConnection();
+
+    PreparedStatement ps = con.prepareStatement(
+            "UPDATE CMS_COMPLAINTS SET STATUS=? WHERE ID=?"
+    );
+
+    ps.setString(1, f.get("status"));
+    ps.setInt(2, Integer.parseInt(f.get("id")));
+
+    ps.executeUpdate();
+
+    redirect(ex, "/admin");
+    return;
+}
+    // ================= REDIRECT =================
+    void redirect(HttpExchange ex, String loc) throws IOException {
+        ex.getResponseHeaders().add("Location", loc);
+        ex.sendResponseHeaders(302, -1);
+    }
+
+    // ================= TEXT =================
+    void sendText(HttpExchange ex, String msg) throws IOException {
+        byte[] data = msg.getBytes();
+        ex.sendResponseHeaders(200, data.length);
+        ex.getResponseBody().write(data);
+        ex.getResponseBody().close();
+    }
+
+    // ================= PARSER =================
+    Map<String, String> parse(HttpExchange ex) throws IOException {
+
+        Scanner sc = new Scanner(ex.getRequestBody()).useDelimiter("\\A");
+        String data = sc.hasNext() ? sc.next() : "";
+
+        Map<String, String> map = new HashMap<>();
+
+        for (String p : data.split("&")) {
+
+            String[] kv = p.split("=");
+
+            if (kv.length > 1) {
+
+                String key = URLDecoder.decode(kv[0], "UTF-8");
+                String value = URLDecoder.decode(kv[1], "UTF-8");
+
+                map.put(key, value);
+            }
+        }
+
+        return map;
+    }
+}
